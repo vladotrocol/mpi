@@ -329,9 +329,12 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
       cells[ii*params.nx + jj].speeds[6] -= w2;
       cells[ii*params.nx + jj].speeds[7] -= w2;
 //--------------------------------------------------------------
+
+      /////////////////////////////////
+      ////AICI MADA//////////////////
       //if I'm on the las row of the thread
       if(ii==(rank+1)*(params.ny/nprocs)-1){
-        
+
             float mes[8*parmas.nx];
             int hh, ff;
             int rank_send = (rank + 1) % nprocs;
