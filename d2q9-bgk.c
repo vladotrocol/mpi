@@ -213,6 +213,9 @@ int main(int argc, char* argv[])
   for (ii=0;ii<params.maxIters;ii++) {
     timestep(params,cells,tmp_cells,obstacles);
 
+
+
+///////////av_velocity.................................................
     int    jj,kk, tt, source;
     float local_density;
     float l_tot_u_x=0; 
@@ -259,6 +262,7 @@ int main(int argc, char* argv[])
       av_vels[ii] = tot_u_x / (float)tot_cells;
     }
   }
+  ///////////av_velocity.................................................
 
   MPI_Finalize();
 
@@ -325,6 +329,20 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
       cells[ii*params.nx + jj].speeds[6] -= w2;
       cells[ii*params.nx + jj].speeds[7] -= w2;
     }
+//--------------------------------------------------------------
+    int rank_send = (rank + 1) % nprocs;
+    int rank_receive = (rank == 0) ? (rank + nprocs - 1) : (rank - 1);
+
+    if(rank%2==0){
+      MPI_Send(&bot_line, 1, MPI_DOUBLE, rank_send, tag, MPI_COMM_WORLD);
+      MPI_Recv(&top_line, 1, MPI_DOUBLE, rank_receive, tag, MPI_COMM_WORLD, &status); 
+    }
+    else{
+      MPI_Recv(&top_line, 1, MPI_DOUBLE, rank_receive, tag, MPI_COMM_WORLD, &status); 
+      MPI_Send(&bot_line, 1, MPI_DOUBLE, rank_send, tag, MPI_COMM_WORLD);
+    }
+
+//--------------------------------------------------------------------
   }
 
 
@@ -342,9 +360,6 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
   w2 = params.density * params.accel / 36.0;
   
 
-
-  int oddrank, evenrank;
-
   for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
 
 
@@ -352,12 +367,15 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       /* determine indices of axis-direction neighbours
       ** respecting periodic boundary conditions (wrap around) */
       y_n = (ii + 1) % params.ny;
-      x_e = (jj + 1) % params.nx;
       y_s = (ii == 0) ? (ii + params.ny - 1) : (ii - 1);
+
+
+      x_e = (jj + 1) % params.nx;
       x_w = (jj == 0) ? (jj + params.nx - 1) : (jj - 1);
+
       /* propagate densities to neighbouring cells, following
       ** appropriate directions of travel and writing into
-      ** scratch space grid */
+      ** scratch space grid */  
       tmp_cells[ii *params.nx + jj].speeds[0]  = cells[ii*params.nx + jj].speeds[0]; /* central cell, */
                                                                                      /* no movement   */
       tmp_cells[ii *params.nx + x_e].speeds[1] = cells[ii*params.nx + jj].speeds[1]; /* east */
