@@ -328,21 +328,38 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
       cells[ii*params.nx + jj].speeds[3] -= w1;
       cells[ii*params.nx + jj].speeds[6] -= w2;
       cells[ii*params.nx + jj].speeds[7] -= w2;
-    }
 //--------------------------------------------------------------
-    int rank_send = (rank + 1) % nprocs;
-    int rank_receive = (rank == 0) ? (rank + nprocs - 1) : (rank - 1);
+      
+      if((rank%2==0&&ii==(rank+1)*(params.ny/nprocs)-1)||
 
-    if(rank%2==0){
-      MPI_Send(&bot_line, 1, MPI_DOUBLE, rank_send, tag, MPI_COMM_WORLD);
-      MPI_Recv(&top_line, 1, MPI_DOUBLE, rank_receive, tag, MPI_COMM_WORLD, &status); 
-    }
-    else{
-      MPI_Recv(&top_line, 1, MPI_DOUBLE, rank_receive, tag, MPI_COMM_WORLD, &status); 
-      MPI_Send(&bot_line, 1, MPI_DOUBLE, rank_send, tag, MPI_COMM_WORLD);
-    }
+        rank%2==1&&ii==rank*(params.ny/nprocs)){
 
+        
+            float mes[6];
+            mess[0] = cells[ii*params.nx + jj].speeds[1];
+            mess[1] = cells[ii*params.nx + jj].speeds[5];
+            mess[2] = cells[ii*params.nx + jj].speeds[8];
+            mess[3] = cells[ii*params.nx + jj].speeds[3];
+            mess[4] = cells[ii*params.nx + jj].speeds[6];
+            mess[5] = cells[ii*params.nx + jj].speeds[7];
+          
+
+            int rank_send = (rank + 1) % nprocs;
+            int rank_receive = (rank == 0) ? (rank + nprocs - 1) : (rank - 1);
+
+          if(rank%2==0){
+            MPI_ISend(mes, 6, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
+            MPI_IRecv(mes, 6, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status); 
+          }
+          else{
+            MPI_IRecv(mes, 6, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status); 
+            MPI_ISend(mes, 6, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
+          }
+    }
 //--------------------------------------------------------------------
+
+    }
+
   }
 
 
