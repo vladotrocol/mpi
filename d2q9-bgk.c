@@ -158,7 +158,7 @@ void usage(const char* exe);
   int dest = MASTER;  /* all procs send to master */
   int tag = 0;        /* message tag */
   MPI_Status status;  /* struct to hold message status */ 
-
+  MPI_Request request;
 
 
 int main(int argc, char* argv[])
@@ -330,60 +330,9 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
       cells[ii*params.nx + jj].speeds[7] -= w2;
 //--------------------------------------------------------------
 
-      /////////////////////////////////
-      ////AICI MADA//////////////////
       //if I'm on the las row of the thread
-      if(ii==(rank+1)*(params.ny/nprocs)-1){
-
-            float mes[8*parmas.nx];
-            int hh, ff;
-            int rank_send = (rank + 1) % nprocs;
-            int rank_receive = (rank == 0) ? (rank + nprocs - 1) : (rank - 1);
-
-            //Even rank
-          if(rank%2==0){
-            //Copy last row into mes
-            for(hh=0;hh<params.nx;h+=8){
-              for(ff=0;ff<9;ff++){
-              mess[8*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
-              }
-            }
-            //send mess
-            MPI_ISend(mes, 8*params.nx, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
-            //recive last row from prev process into mes
-            MPI_IRecv(mes, 8*params.nx, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status);
-            //Put mes into first row
-            for(hh=0;hh<params.nx;h+=8){
-              for(ff=0;ff<9;ff++){
-                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mess[8*hh+ff];
-              }
-            }
-
-          }
-          //Odd rank
-          else{
-            //receive last row from prev process into mes
-            MPI_IRecv(mes, 8*params.nx, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status); 
-            //put mes into fist row
-            for(hh=0;hh<params.nx;h+=8){
-              for(ff=0;ff<9;ff++){
-                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mess[8*hh+ff];
-              }
-            }
-            //put last row into mess
-            for(hh=0;hh<params.nx;h+=8){
-              for(ff=0;ff<9;ff++){
-              mess[8*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
-              }
-            }
-            //send mess
-            MPI_ISend(mes, 8*params.nx, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
-          }
+     
     }
-//-------------------------------------------------------------------
-
-    }
-
   }
 
 
@@ -392,6 +341,14 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
 
 int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obstacles)
 {
+
+
+
+
+
+
+
+
   int ii,jj;            /* generic counters */
   int x_e,x_w,y_n,y_s;  /* indices of neighbouring cells */
   float w1,w2;  /* weighting factors */
@@ -400,8 +357,94 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
   w1 = params.density * params.accel / 9.0;
   w2 = params.density * params.accel / 36.0;
   
-
+            float mes[9*params.nx];
+            float mes2[9*params.nx];
   for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
+
+
+ if(ii==(rank+1)*(params.ny/nprocs)-1){
+
+
+            int hh, ff;
+            int rank_send = (rank + 1) % nprocs;
+            int rank_receive = (rank-1+nprocs)%nprocs;
+          
+      //     for(hh=0;hh<params.nx;hh++){
+      //         for(ff=0;ff<9;ff++){
+      //           mes[9*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
+      //         }
+      //       }
+
+      //     //MPI_Sendrecv(mes, 9*params.nx, MPI_FLOAT, rank_send, tag, mes2, 9*params.nx, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status);
+      //        MPI_Sendrecv_replace(mes, 9*params.nx, MPI_FLOAT, rank_send, tag,
+      //         rank_receive, tag, MPI_COMM_WORLD, &status);
+         
+
+      // for(hh=0;hh<params.nx;hh++){
+      //         for(ff=0;ff<9;ff++){
+      //           cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes[9*hh+ff];
+      //         }
+      //       }
+
+
+            //Even rank
+          if(rank%2==0){
+            //Copy last row into mes
+            for(hh=0;hh<params.nx;hh++){
+              for(ff=0;ff<9;ff++){
+                mes[9*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
+              }
+            }
+            //send mess
+            MPI_Send(mes, 9*params.nx, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
+            //recive last row from prev process into mes
+            MPI_Recv(mes2, 9*params.nx, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status);
+            //Put mes into first row
+            for(hh=0;hh<params.nx;hh++){
+              for(ff=0;ff<9;ff++){
+                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes2[9*hh+ff];
+              }
+            }
+
+          }
+          //Odd rank
+          else{
+            //receive last row from prev process into mes
+            MPI_Recv(mes, 9*params.nx, MPI_FLOAT, rank_receive, tag, MPI_COMM_WORLD, &status); 
+            //put mes into fist row
+            for(hh=0;hh<params.nx;hh++){
+              for(ff=0;ff<9;ff++){
+                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes[9*hh+ff];
+              }
+            }
+            //put last row into mess
+            for(hh=0;hh<params.nx;hh++){
+              for(ff=0;ff<9;ff++){
+                mes2[9*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
+              }
+            }
+            //send mess
+            MPI_Send(mes2, 9*params.nx, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
+          }
+    }
+//-------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
     for(jj=0;jj<params.nx;jj++) {
