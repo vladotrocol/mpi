@@ -334,7 +334,7 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
 
         rank%2==1&&ii==rank*(params.ny/nprocs)){
 
-        
+
             float mes[6];
             mess[0] = cells[ii*params.nx + jj].speeds[1];
             mess[1] = cells[ii*params.nx + jj].speeds[5];
@@ -356,7 +356,7 @@ int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
             MPI_ISend(mes, 6, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
           }
     }
-//--------------------------------------------------------------------
+//-------------------------------------------------------------------
 
     }
 
