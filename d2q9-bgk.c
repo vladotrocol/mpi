@@ -150,7 +150,7 @@ void usage(const char* exe);
 ** initialise, timestep loop, finalise
 */
 
-
+int atyt=1;
 
   int rank;           /* process rank */
   int nprocs;         /* number of processes */
@@ -213,7 +213,9 @@ int main(int argc, char* argv[])
   for (ii=0;ii<params.maxIters;ii++) {
     timestep(params,cells,tmp_cells,obstacles);
 
-
+    if(ii==120){
+      atyt = 0;
+    }
 
 ///////////av_velocity.................................................
     int    jj,kk, tt, source;
@@ -223,7 +225,6 @@ int main(int argc, char* argv[])
 
     for(kk=(rank-1)*(params.ny/(nprocs-1));kk<(rank)*(params.ny/(nprocs-1));kk++)
     {
-      if(rank!=MASTER)
       {
         for(jj=0;jj<params.nx;jj++)
         {
@@ -248,11 +249,11 @@ int main(int argc, char* argv[])
 
         }
       }
-    }
     if(rank!=MASTER){
       MPI_Send(&l_tot_u_x, 1, MPI_FLOAT, dest, tag, MPI_COMM_WORLD);
       MPI_Send(&l_tot_cells, 1, MPI_INT, dest, tag, MPI_COMM_WORLD);}
     else{
+      tot_cells = l_tot_cells;
       for (source =1; source < nprocs; source++) {
         MPI_Recv(&l_tot_u_x, 1, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &status);
         tot_u_x+=l_tot_u_x;
@@ -385,7 +386,13 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       //           cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes[9*hh+ff];
       //         }
       //       }
-
+            if(atyt==0&&rank == 2){
+              printf("\n++++++++++\n");
+              for(ff=0;ff<9;ff++){
+                printf("s%d, %f\n", ff, cells[rank*(params.ny/nprocs)*params.nx + 0].speeds[ff]);
+              }
+              printf("\n**********\n");
+          }
 
             //Even rank
           if(rank%2==0){
@@ -414,7 +421,7 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
             //put mes into fist row
             for(hh=0;hh<params.nx;hh++){
               for(ff=0;ff<9;ff++){
-                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes[9*hh+ff];
+                cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff] = mes[9*hh+ff];
               }
             }
             //put last row into mess
@@ -425,6 +432,14 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
             }
             //send mess
             MPI_Send(mes2, 9*params.nx, MPI_FLOAT, rank_send, tag, MPI_COMM_WORLD);
+          }
+          if(atyt==0&&rank == 2){
+          printf("\n-------------\n");
+              for(ff=0;ff<9;ff++){
+                printf("s%d, %f\n", ff, cells[rank*(params.ny/nprocs)*params.nx + 0].speeds[ff]);
+              }
+            printf("\n\n\n");
+            atyt=1;
           }
     }
 //-------------------------------------------------------------------
