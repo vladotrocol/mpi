@@ -97,6 +97,7 @@ typedef struct {
   float density;       /* density per link */
   float accel;         /* density redistribution */
   float omega;         /* relaxation parameter */
+  int rest;
 } t_param;
 
 /* struct to hold the 'speed' values */
@@ -214,11 +215,11 @@ int main(int argc, char* argv[])
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-
+  params.rest = params.ny%nprocs;
   for (ii=0;ii<params.maxIters;ii++) {
     timestep(params,cells,tmp_cells,obstacles);
 
-    if(ii==120){
+    if(ii==1){
       atyt = 0;
     }
 
@@ -226,13 +227,24 @@ int main(int argc, char* argv[])
     int    jj,kk, tt, source;
     float local_density;
 
-    float tot_u_x=0; 
+    float  tot_u_x=0; 
     int    tot_cells = 0; 
 
 
 
 //use accumulator instead!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    for(kk=(rank)*(params.ny/(nprocs-1));kk<(rank)*(params.ny/(nprocs));kk++)
+      int start=0, end=0;
+   if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+  for(kk=start;kk<end;kk++) 
     {
 
         for(jj=0;jj<params.nx;jj++)
@@ -268,7 +280,55 @@ int main(int argc, char* argv[])
         av_vels[ii] = tot_u_x / (float)tot_cells;
       }
     }
+  int start=0, end=0, ff, hh, gg, cc;
+  float mes[9*params.nx];
   
+  if(rank == MASTER){
+    for(source=1;source<nprocs;source++){
+            
+          if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+
+            for(gg=start;gg<end;gg++) {
+               MPI_Recv(mes, 9*params.nx, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &status);
+               for(hh=0;hh<params.nx;hh++){
+                  for(ff=0;ff<9;ff++){
+                    cells[gg*params.nx + hh].speeds[ff]=mes[9*hh+ff];
+                  }
+                }
+            }     
+    }
+  }
+  else{
+    //copy last row into south_halo
+ if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+
+    for(gg=start;gg<end;gg++) {
+      for(hh=0;hh<params.nx;hh++){
+          for(ff=0;ff<9;ff++){
+            mes[9*hh+ff] = cells[gg*params.nx + hh].speeds[ff];
+          }
+        }
+      }
+      MPI_Send(mes, 9*params.nx, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
+  }
   ///////////av_velocity.................................................
 
   MPI_Finalize();
@@ -357,136 +417,190 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
   w1 = params.density * params.accel / 9.0;
   w2 = params.density * params.accel / 36.0;
   
-            float halo_north[9*params.nx];
-            float halo_south[9*params.nx];
+  float halo_north[9*params.nx];
+  float halo_south[9*params.nx];
 
-  int first_row = rank*(params.ny/nprocs);
-  int last_row = (rank+1)*(params.ny/nprocs)-1;
-  for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
+
     
-    //if i'm on the last row
-    if(ii==last_row){
+
+
+
+
       int hh, ff;
       int rank_right = (rank + 1) % nprocs;
       int rank_left = (rank-1+nprocs)%nprocs;
+      int h_south;
+      int h_north;
+
+
+
+
+   int start=0, end=0;
+   // if(rank<params.rest && params.rest!=0){
+   //    start = rank*(params.ny/nprocs)+rank%params.rest;
+   //    end = (rank+1)*(params.ny/nprocs) + (rank)%params.rest;
+   // }
+   // else if(params.rest!=0){
+   //  start= rank*(params.ny/nprocs)+params.rest-1;
+   //  end = (rank+1)*(params.ny/nprocs)+params.rest-1;
+   // }
+
+   if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+
+      if(start==0){
+        h_south = params.ny-1;
+      }
+      else{
+        h_south = start-1;
+      }
+
+      if(end==params.ny-1){
+        h_north = 0;
+      }
+      else{
+        h_north = end+1;
+      }
+      //printf("rank: %d new_s: %d new_e: %d", rank, start, end);
 
       //copy last row into south_halo
       for(hh=0;hh<params.nx;hh++){
           for(ff=0;ff<9;ff++){
-            halo_south[9*hh+ff] = cells[last_row*params.nx + hh].speeds[ff];
+            halo_south[9*hh+ff] = cells[end*params.nx + hh].speeds[ff];
           }
         }
 
       //send south halo to the right and receive it into north halo from the left
-      MPI_Sendrecv(halo_south, 9*params.nx, MPI_FLOAT, rank_right, tag, halo_north, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status);
-      
+      MPI_Sendrecv(halo_south, 9*params.nx, MPI_FLOAT, rank_right, tag, halo_south, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status);
+      //printf("\n\nSpeed: %f\n", halo_north[0]);
+
+
       //copy north halo into first row of cells
       for(hh=0;hh<params.nx;hh++){
           for(ff=0;ff<9;ff++){
-            cells[first_row*params.nx + hh].speeds[ff]=halo_north[9*hh+ff];
+            cells[h_south*params.nx + hh].speeds[ff]=halo_north[9*hh+ff];
           }
         }
-    }
+    
 
-    //if i'm on the first row
-    if(ii==first_row){
-      int hh, ff;
-      int rank_right = (rank + 1) % nprocs;
-      int rank_left = (rank-1+nprocs)%nprocs;
+
+
       
       //copy fist row into north halo
       for(hh=0;hh<params.nx;hh++){
         for(ff=0;ff<9;ff++){
-          halo_north[9*hh+ff] = cells[first_row*params.nx + hh].speeds[ff];
+          halo_north[9*hh+ff] = cells[start*params.nx + hh].speeds[ff];
         }
       }
 
       //send the north halo to the left and receive into south halo from the right
-      MPI_Sendrecv(halo_north, 9*params.nx, MPI_FLOAT, rank_left, tag, halo_south, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD, &status);
+      MPI_Sendrecv(halo_north, 9*params.nx, MPI_FLOAT, rank_left, tag, halo_north, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD, &status);
       //        MPI_Sendrecv_replace(mes, 9*params.nx, MPI_FLOAT, rank_right, tag,
       //         rank_left, tag, MPI_COMM_WORLD, &status);
       
-      //copy outh halo into last row of cells
+      //copy south halo into last row of cells
       for(hh=0;hh<params.nx;hh++){
         for(ff=0;ff<9;ff++){
-          cells[last_row*params.nx + hh].speeds[ff]=halo_south[9*hh+ff];
+          cells[h_north*params.nx + hh].speeds[ff]=halo_south[9*hh+ff];
         }
       }
+        jj=0;
+  
+  ii=h_south;
+    if( !obstacles[ii*params.nx + jj] && 
+  (cells[ii*params.nx + jj].speeds[3] - w1) > 0.0 &&
+  (cells[ii*params.nx + jj].speeds[6] - w2) > 0.0 &&
+  (cells[ii*params.nx + jj].speeds[7] - w2) > 0.0 ) {
+      /* increase 'east-side' densities */
+      cells[ii*params.nx + jj].speeds[1] += w1;
+      cells[ii*params.nx + jj].speeds[5] += w2;
+      cells[ii*params.nx + jj].speeds[8] += w2;
+      /* decrease 'west-side' densities */
+      cells[ii*params.nx + jj].speeds[3] -= w1;
+      cells[ii*params.nx + jj].speeds[6] -= w2;
+      cells[ii*params.nx + jj].speeds[7] -= w2;
     }
 
 
 
+/* determine indices of axis-direction neighbours
+      ** respecting periodic boundary conditions (wrap around) */
+      y_n = (ii + 1) % params.ny;
+      y_s = (ii == 0) ? (ii + params.ny - 1) : (ii - 1);
 
-    //         if(atyt==0&&rank == 2){
-    //           printf("\n++++++++++\n");
-    //           for(ff=0;ff<9;ff++){
-    //             printf("s%d, %f\n", ff, cells[rank*(params.ny/nprocs)*params.nx + 0].speeds[ff]);
-    //           }
-    //           printf("\n**********\n");
-    //       }
 
-    //         //Even rank
-    //       if(rank%2==0){
-    //         //Copy last row into mes
-    //         for(hh=0;hh<params.nx;hh++){
-    //           for(ff=0;ff<9;ff++){
-    //             mes[9*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
-    //           }
-    //         }
-    //         //send mess
-    //         MPI_Send(mes, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD);
-    //         //recive last row from prev process into mes
-    //         MPI_Recv(mes2, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status);
-    //         //Put mes into first row
-    //         for(hh=0;hh<params.nx;hh++){
-    //           for(ff=0;ff<9;ff++){
-    //             cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff]=mes2[9*hh+ff];
-    //           }
-    //         }
+      x_e = (jj + 1) % params.nx;
+      x_w = (jj == 0) ? (jj + params.nx - 1) : (jj - 1);
 
-    //       }
-    //       //Odd rank
-    //       else{
-    //         //receive last row from prev process into mes
-    //         MPI_Recv(mes, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status); 
-    //         //put mes into fist row
-    //         for(hh=0;hh<params.nx;hh++){
-    //           for(ff=0;ff<9;ff++){
-    //             cells[rank*(params.ny/nprocs)*params.nx + hh].speeds[ff] = mes[9*hh+ff];
-    //           }
-    //         }
-    //         //put last row into mess
-    //         for(hh=0;hh<params.nx;hh++){
-    //           for(ff=0;ff<9;ff++){
-    //             mes2[9*hh+ff] = cells[ii*params.nx + hh].speeds[ff];
-    //           }
-    //         }
-    //         //send mess
-    //         MPI_Send(mes2, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD);
-    //       }
-    //       if(atyt==0&&rank == 2){
-    //       printf("\n-------------\n");
-    //           for(ff=0;ff<9;ff++){
-    //             printf("s%d, %f\n", ff, cells[rank*(params.ny/nprocs)*params.nx + 0].speeds[ff]);
-    //           }
-    //         printf("\n\n\n");
-    //         atyt=1;
-    //       }
-    // }
-//-------------------------------------------------------------------
+      /* propagate densities to neighbouring cells, following
+      ** appropriate directions of travel and writing into
+      ** scratch space grid */  
+      tmp_cells[ii *params.nx + jj].speeds[0]  = cells[ii*params.nx + jj].speeds[0]; /* central cell, */
+                                                                                     /* no movement   */
+      tmp_cells[ii *params.nx + x_e].speeds[1] = cells[ii*params.nx + jj].speeds[1]; /* east */
+      tmp_cells[y_n*params.nx + jj].speeds[2]  = cells[ii*params.nx + jj].speeds[2]; /* north */
+      tmp_cells[ii *params.nx + x_w].speeds[3] = cells[ii*params.nx + jj].speeds[3]; /* west */
+      tmp_cells[y_s*params.nx + jj].speeds[4]  = cells[ii*params.nx + jj].speeds[4]; /* south */
+      tmp_cells[y_n*params.nx + x_e].speeds[5] = cells[ii*params.nx + jj].speeds[5]; /* north-east */
+      tmp_cells[y_n*params.nx + x_w].speeds[6] = cells[ii*params.nx + jj].speeds[6]; /* north-west */
+      tmp_cells[y_s*params.nx + x_w].speeds[7] = cells[ii*params.nx + jj].speeds[7]; /* south-west */      
+      tmp_cells[y_s*params.nx + x_e].speeds[8] = cells[ii*params.nx + jj].speeds[8]; /* south-east */      
 
 
 
+  
+  ii=h_north;
+    if( !obstacles[ii*params.nx + jj] && 
+  (cells[ii*params.nx + jj].speeds[3] - w1) > 0.0 &&
+  (cells[ii*params.nx + jj].speeds[6] - w2) > 0.0 &&
+  (cells[ii*params.nx + jj].speeds[7] - w2) > 0.0 ) {
+      /* increase 'east-side' densities */
+      cells[ii*params.nx + jj].speeds[1] += w1;
+      cells[ii*params.nx + jj].speeds[5] += w2;
+      cells[ii*params.nx + jj].speeds[8] += w2;
+      /* decrease 'west-side' densities */
+      cells[ii*params.nx + jj].speeds[3] -= w1;
+      cells[ii*params.nx + jj].speeds[6] -= w2;
+      cells[ii*params.nx + jj].speeds[7] -= w2;
+    }
 
 
 
+/* determine indices of axis-direction neighbours
+      ** respecting periodic boundary conditions (wrap around) */
+      y_n = (ii + 1) % params.ny;
+      y_s = (ii == 0) ? (ii + params.ny - 1) : (ii - 1);
 
 
+      x_e = (jj + 1) % params.nx;
+      x_w = (jj == 0) ? (jj + params.nx - 1) : (jj - 1);
 
+      /* propagate densities to neighbouring cells, following
+      ** appropriate directions of travel and writing into
+      ** scratch space grid */  
+      tmp_cells[ii *params.nx + jj].speeds[0]  = cells[ii*params.nx + jj].speeds[0]; /* central cell, */
+                                                                                     /* no movement   */
+      tmp_cells[ii *params.nx + x_e].speeds[1] = cells[ii*params.nx + jj].speeds[1]; /* east */
+      tmp_cells[y_n*params.nx + jj].speeds[2]  = cells[ii*params.nx + jj].speeds[2]; /* north */
+      tmp_cells[ii *params.nx + x_w].speeds[3] = cells[ii*params.nx + jj].speeds[3]; /* west */
+      tmp_cells[y_s*params.nx + jj].speeds[4]  = cells[ii*params.nx + jj].speeds[4]; /* south */
+      tmp_cells[y_n*params.nx + x_e].speeds[5] = cells[ii*params.nx + jj].speeds[5]; /* north-east */
+      tmp_cells[y_n*params.nx + x_w].speeds[6] = cells[ii*params.nx + jj].speeds[6]; /* north-west */
+      tmp_cells[y_s*params.nx + x_w].speeds[7] = cells[ii*params.nx + jj].speeds[7]; /* south-west */      
+      tmp_cells[y_s*params.nx + x_e].speeds[8] = cells[ii*params.nx + jj].speeds[8]; /* south-east */      
 
 
 
 
+  for(ii=start;ii<end;ii++) {
     jj=0;
  
     if( !obstacles[ii*params.nx + jj] && 
@@ -542,7 +656,18 @@ int rebound(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obsta
   int ii,jj;  /* generic counters */
     //#pragma omp parallel for private(jj)
   /* loop over the cells in the grid */
-  for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
+     int start=0, end=0;
+   if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+  for(ii=start;ii<end;ii++) {
     for(jj=0;jj<params.nx;jj++) {
       /* if the cell contains an obstacle */
       if(obstacles[ii*params.nx + jj]) {
@@ -581,7 +706,18 @@ int collision(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
   ** are in the scratch-space grid */
   //#pragma omp parallel private(ii, jj, u_x, u_y, u_sq, local_density)
   //#pragma omp for
-  for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
+    int start=0, end=0;
+   if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+  for(ii=start;ii<end;ii++) {
     for(jj=0;jj<params.nx;jj++) {
       /* don't consider occupied cells */
       if(!obstacles[ii*params.nx + jj]) {
@@ -926,4 +1062,4 @@ void usage(const char* exe)
 {
   fprintf(stderr, "Usage: %s <paramfile> <obstaclefile>\n", exe);
   exit(EXIT_FAILURE);
-}
+} 
