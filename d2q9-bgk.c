@@ -222,6 +222,9 @@ int main(int argc, char* argv[])
     if(ii==1){
       atyt = 0;
     }
+      if(ii==2){
+      atyt = 1;
+    }
 
 ///////////av_velocity.................................................
     int    jj,kk, tt, source;
@@ -230,9 +233,6 @@ int main(int argc, char* argv[])
     float  tot_u_x=0; 
     int    tot_cells = 0; 
 
-
-
-//use accumulator instead!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
       int start=0, end=0;
    if(params.rest!=0){
     if(rank>=params.rest){
@@ -244,7 +244,7 @@ int main(int argc, char* argv[])
       end = start+params.ny/nprocs;
     }
    }
-  for(kk=start;kk<end;kk++) 
+  for(kk=start;kk<=end;kk++) 
     {
 
         for(jj=0;jj<params.nx;jj++)
@@ -280,9 +280,38 @@ int main(int argc, char* argv[])
         av_vels[ii] = tot_u_x / (float)tot_cells;
       }
     }
-  int start=0, end=0, ff, hh, gg, cc;
+
+
+
+
+
+
+
+  int start=0, end=0, ff, hh, gg;
   float mes[9*params.nx];
-  
+  float mes2[9*params.nx];
+  if(rank!=MASTER){
+
+ if(params.rest!=0){
+    if(rank>=params.rest){
+      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
+      end= start+params.ny/nprocs-1;
+    }
+    else{
+      start = rank*(params.ny/nprocs+1);
+      end = start+params.ny/nprocs;
+    }
+   }
+
+    for(gg=start;gg<=end;gg++) {
+      for(hh=0;hh<params.nx;hh++){
+          for(ff=0;ff<9;ff++){
+            mes[9*hh+ff] = cells[gg*params.nx + hh].speeds[ff];
+          }
+        }
+      }
+      MPI_Isend(mes, 9*params.nx, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD, &request);
+  }
   if(rank == MASTER){
     for(source=1;source<nprocs;source++){
             
@@ -297,38 +326,17 @@ int main(int argc, char* argv[])
     }
    }
 
-            for(gg=start;gg<end;gg++) {
-               MPI_Recv(mes, 9*params.nx, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &status);
+            for(gg=start;gg<=end;gg++) {
+               MPI_Irecv(mes2, 9*params.nx, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &request);
                for(hh=0;hh<params.nx;hh++){
                   for(ff=0;ff<9;ff++){
-                    cells[gg*params.nx + hh].speeds[ff]=mes[9*hh+ff];
+                    cells[gg*params.nx + hh].speeds[ff]=mes2[9*hh+ff];
                   }
                 }
             }     
     }
   }
-  else{
-    //copy last row into south_halo
- if(params.rest!=0){
-    if(rank>=params.rest){
-      start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
-      end= start+params.ny/nprocs-1;
-    }
-    else{
-      start = rank*(params.ny/nprocs+1);
-      end = start+params.ny/nprocs;
-    }
-   }
-
-    for(gg=start;gg<end;gg++) {
-      for(hh=0;hh<params.nx;hh++){
-          for(ff=0;ff<9;ff++){
-            mes[9*hh+ff] = cells[gg*params.nx + hh].speeds[ff];
-          }
-        }
-      }
-      MPI_Send(mes, 9*params.nx, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD);
-  }
+  
   ///////////av_velocity.................................................
 
   MPI_Finalize();
@@ -368,43 +376,6 @@ int timestep(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obst
   return EXIT_SUCCESS; 
 }
 
-int accelerate_flow(const t_param params, t_speed* cells, int* obstacles)
-{
-  int ii,jj;     /* generic counters */
-  float w1,w2;  /* weighting factors */
-  
-  /* compute weighting factors */
-  w1 = params.density * params.accel / 9.0;
-  w2 = params.density * params.accel / 36.0;
-
-  /* modify the first column of the grid */
-  jj=0;
-
- for(ii=rank*(params.ny/nprocs);ii<(rank+1)*(params.ny/nprocs);ii++) {
-    /* if the cell is not occupied and
-    ** we don't send a density negative */
-    if( !obstacles[ii*params.nx + jj] && 
-  (cells[ii*params.nx + jj].speeds[3] - w1) > 0.0 &&
-  (cells[ii*params.nx + jj].speeds[6] - w2) > 0.0 &&
-  (cells[ii*params.nx + jj].speeds[7] - w2) > 0.0 ) {
-      /* increase 'east-side' densities */
-      cells[ii*params.nx + jj].speeds[1] += w1;
-      cells[ii*params.nx + jj].speeds[5] += w2;
-      cells[ii*params.nx + jj].speeds[8] += w2;
-      /* decrease 'west-side' densities */
-      cells[ii*params.nx + jj].speeds[3] -= w1;
-      cells[ii*params.nx + jj].speeds[6] -= w2;
-      cells[ii*params.nx + jj].speeds[7] -= w2;
-//--------------------------------------------------------------
-
-      //if I'm on the las row of the thread
-     
-    }
-  }
-
-
-  return EXIT_SUCCESS;
-}
 
 int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obstacles)
 {
@@ -418,7 +389,9 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
   w2 = params.density * params.accel / 36.0;
   
   float halo_north[9*params.nx];
+  float halo_north_r[9*params.nx];
   float halo_south[9*params.nx];
+  float halo_south_r[9*params.nx];
 
 
     
@@ -428,7 +401,9 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
 
       int hh, ff;
       int rank_right = (rank + 1) % nprocs;
-      int rank_left = (rank-1+nprocs)%nprocs;
+      int rank_left = rank-1;
+      if(rank_left<0)
+        rank_left = nprocs-1;
       int h_south;
       int h_north;
 
@@ -469,49 +444,111 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       else{
         h_north = end+1;
       }
-      //printf("rank: %d new_s: %d new_e: %d", rank, start, end);
 
-      //copy last row into south_halo
-      for(hh=0;hh<params.nx;hh++){
+      if(atyt==0){
+        printf("r: %d, s: %d, e: %d, hs: %d, hn: %d\n", rank, start, end, h_south, h_north);
+      }
+
+
+
+
+      int kk;
+//       for(jj=0;jj<params.nx;jj++) {
+//     for(kk=0;kk<NSPEEDS;kk++) {
+//   halo_south[jj*NSPEEDS+kk]=cells[end*params.nx+jj].speeds[kk];
+//       halo_north[jj*NSPEEDS+kk]=cells[start*params.nx+jj].speeds[kk];
+//         halo_south_r[jj*NSPEEDS+kk]=0;
+//         halo_north_r[jj*NSPEEDS+kk]=0;
+//       }
+//    }
+
+//        //if(h_north==0||h_south==199)
+// //Even rank
+//           if(rank%2==0){
+//             MPI_Send(halo_south, 9*params.nx, MPI_FLOAT, rank_right, 0, MPI_COMM_WORLD);
+//           }else{
+//             MPI_Recv(halo_south_r, 9*params.nx, MPI_FLOAT, rank_left, 0, MPI_COMM_WORLD, &status);   
+//           }
+
+
+//           if(rank%2==0){
+
+//             //send mess
+//             MPI_Send(halo_north, 9*params.nx, MPI_FLOAT, rank_left, 0, MPI_COMM_WORLD);
+//           }else{  //recive last row from prev process into mes
+//             MPI_Recv(halo_north_r, 9*params.nx, MPI_FLOAT, rank_right, 0, MPI_COMM_WORLD, &status);
+//           }
+//            if(rank%2==1){
+
+//             //receive last row from prev process into mes
+//             MPI_Recv(halo_south, 9*params.nx, MPI_FLOAT, rank_right, 0, MPI_COMM_WORLD, &status); 
+//             }else{//send mess
+//             MPI_Send(halo_south_r, 9*params.nx, MPI_FLOAT, rank_left, 0, MPI_COMM_WORLD);
+//           }
+//               if(rank%2==1){
+
+//             //receive last row from prev process into mes
+//             MPI_Recv(halo_north, 9*params.nx, MPI_FLOAT, rank_left, 0, MPI_COMM_WORLD, &status); 
+//      }else{ //send mess
+//             MPI_Send(halo_north_r, 9*params.nx, MPI_FLOAT, rank_right, 0, MPI_COMM_WORLD);
+//           }
+//            //printf("rank: %d, rl: %d, rr: %d, new_s: %d, new_e: %d\n", rank, rank_left, rank_right, start, end);
+
+          
+//     for(jj=0;jj<params.nx;jj++) { 
+//      for(kk=0;kk<NSPEEDS;kk++) {
+//         cells[start*params.nx+jj].speeds[kk]=halo_south_r[jj*NSPEEDS+kk];
+//         cells[end*params.nx+jj].speeds[kk]=halo_north_r[jj*NSPEEDS+kk];
+//       }
+
+//    }
+
+
+
+
+
+
+
+        //copy last row into south_halo
+        for(hh=0;hh<params.nx;hh++){
+            for(ff=0;ff<9;ff++){
+              halo_south[9*hh+ff] = cells[(end)*params.nx + hh].speeds[ff];
+            }
+          }
+
+        //send south halo to the right and receive it into north halo from the left
+        MPI_Sendrecv(halo_south, 9*params.nx, MPI_FLOAT, rank_right, tag, halo_south_r, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status);
+        //printf("\n\nSpeed: %f\n", halo_north[0]);
+
+        //printf("%f, %f\n",cells[h_south*params.nx + hh].speeds[0], cells[h_south*params.nx + hh].speeds[1]);
+        //copy north halo into first row of cells
+        for(hh=0;hh<params.nx;hh++){
+            for(ff=0;ff<9;ff++){
+              cells[h_south*params.nx + hh].speeds[ff]=halo_south_r[9*hh+ff];
+            }
+          }
+        //printf("%f, %f\n",cells[h_south*params.nx + hh].speeds[0], cells[h_south*params.nx + hh].speeds[1]);
+
+        //copy fist row into north halo
+        for(hh=0;hh<params.nx;hh++){
           for(ff=0;ff<9;ff++){
-            halo_south[9*hh+ff] = cells[end*params.nx + hh].speeds[ff];
+            halo_north[9*hh+ff] = cells[start*params.nx + hh].speeds[ff];
           }
         }
 
-      //send south halo to the right and receive it into north halo from the left
-      MPI_Sendrecv(halo_south, 9*params.nx, MPI_FLOAT, rank_right, tag, halo_south, 9*params.nx, MPI_FLOAT, rank_left, tag, MPI_COMM_WORLD, &status);
-      //printf("\n\nSpeed: %f\n", halo_north[0]);
-
-
-      //copy north halo into first row of cells
-      for(hh=0;hh<params.nx;hh++){
+        //send the north halo to the left and receive into south halo from the right
+        MPI_Sendrecv(halo_north, 9*params.nx, MPI_FLOAT, rank_left, tag, halo_north_r, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD, &status);
+        //        MPI_Sendrecv_replace(mes, 9*params.nx, MPI_FLOAT, rank_right, tag,
+        //         rank_left, tag, MPI_COMM_WORLD, &status);
+        
+        //copy south halo into last row of cells
+        for(hh=0;hh<params.nx;hh++){
           for(ff=0;ff<9;ff++){
-            cells[h_south*params.nx + hh].speeds[ff]=halo_north[9*hh+ff];
+            cells[h_north*params.nx + hh].speeds[ff]=halo_south_r[9*hh+ff];
           }
         }
-    
+        
 
-
-
-      
-      //copy fist row into north halo
-      for(hh=0;hh<params.nx;hh++){
-        for(ff=0;ff<9;ff++){
-          halo_north[9*hh+ff] = cells[start*params.nx + hh].speeds[ff];
-        }
-      }
-
-      //send the north halo to the left and receive into south halo from the right
-      MPI_Sendrecv(halo_north, 9*params.nx, MPI_FLOAT, rank_left, tag, halo_north, 9*params.nx, MPI_FLOAT, rank_right, tag, MPI_COMM_WORLD, &status);
-      //        MPI_Sendrecv_replace(mes, 9*params.nx, MPI_FLOAT, rank_right, tag,
-      //         rank_left, tag, MPI_COMM_WORLD, &status);
-      
-      //copy south halo into last row of cells
-      for(hh=0;hh<params.nx;hh++){
-        for(ff=0;ff<9;ff++){
-          cells[h_north*params.nx + hh].speeds[ff]=halo_south[9*hh+ff];
-        }
-      }
         jj=0;
   
   ii=h_south;
@@ -531,8 +568,7 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
 
 
 
-/* determine indices of axis-direction neighbours
-      ** respecting periodic boundary conditions (wrap around) */
+  for(jj=0;jj<params.nx;jj++) {  
       y_n = (ii + 1) % params.ny;
       y_s = (ii == 0) ? (ii + params.ny - 1) : (ii - 1);
 
@@ -554,9 +590,9 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       tmp_cells[y_s*params.nx + x_w].speeds[7] = cells[ii*params.nx + jj].speeds[7]; /* south-west */      
       tmp_cells[y_s*params.nx + x_e].speeds[8] = cells[ii*params.nx + jj].speeds[8]; /* south-east */      
 
+}
 
-
-  
+  jj=0;
   ii=h_north;
     if( !obstacles[ii*params.nx + jj] && 
   (cells[ii*params.nx + jj].speeds[3] - w1) > 0.0 &&
@@ -576,6 +612,7 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
 
 /* determine indices of axis-direction neighbours
       ** respecting periodic boundary conditions (wrap around) */
+  for(jj=0;jj<params.nx;jj++) {  
       y_n = (ii + 1) % params.ny;
       y_s = (ii == 0) ? (ii + params.ny - 1) : (ii - 1);
 
@@ -597,10 +634,10 @@ int propagate(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       tmp_cells[y_s*params.nx + x_w].speeds[7] = cells[ii*params.nx + jj].speeds[7]; /* south-west */      
       tmp_cells[y_s*params.nx + x_e].speeds[8] = cells[ii*params.nx + jj].speeds[8]; /* south-east */      
 
+}
 
 
-
-  for(ii=start;ii<end;ii++) {
+  for(ii=start;ii<=end;ii++) {
     jj=0;
  
     if( !obstacles[ii*params.nx + jj] && 
@@ -667,7 +704,7 @@ int rebound(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obsta
       end = start+params.ny/nprocs;
     }
    }
-  for(ii=start;ii<end;ii++) {
+  for(ii=start;ii<=end;ii++) {
     for(jj=0;jj<params.nx;jj++) {
       /* if the cell contains an obstacle */
       if(obstacles[ii*params.nx + jj]) {
@@ -717,7 +754,7 @@ int collision(const t_param params, t_speed* cells, t_speed* tmp_cells, int* obs
       end = start+params.ny/nprocs;
     }
    }
-  for(ii=start;ii<end;ii++) {
+  for(ii=start;ii<=end;ii++) {
     for(jj=0;jj<params.nx;jj++) {
       /* don't consider occupied cells */
       if(!obstacles[ii*params.nx + jj]) {
