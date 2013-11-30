@@ -220,13 +220,14 @@ int start=0, end=0, ff, hh, gg;
 
 
 
-
+tot_u_x=0; 
+tot_cells = 0; 
 
  
 
 ///////////av_velocity.................................................
     int    jj,kk, tt, source;
-    float local_density;
+    float local_density=0;
     float l_tot_u_x=0; 
     int    l_tot_cells = 0; 
 
@@ -275,6 +276,7 @@ int start=0, end=0, ff, hh, gg;
       MPI_Send(&l_tot_cells, 1, MPI_INT, dest, tag, MPI_COMM_WORLD);}
     else{
       tot_cells = l_tot_cells;
+      tot_u_x = l_tot_u_x;
       for (source =1; source < nprocs; source++) {
         MPI_Recv(&l_tot_u_x, 1, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &status);
         tot_u_x+=l_tot_u_x;
@@ -317,9 +319,10 @@ int start=0, end=0, ff, hh, gg;
  
   float mes[9*params.nx];
   float mes2[9*params.nx];
-  if(rank!=MASTER){
+ 
+ int xx, kk, jj;
 
- if(params.rest!=0){
+      if(params.rest!=0){
     if(rank>=params.rest){
       start = params.rest*(params.ny/nprocs+1) + (rank-params.rest)*(params.ny/nprocs);
       end= start+params.ny/nprocs-1;
@@ -330,37 +333,39 @@ int start=0, end=0, ff, hh, gg;
     }
    }
 
-    for(gg=start;gg<=end;gg++) {
-      for(hh=0;hh<params.nx;hh++){
-          for(ff=0;ff<9;ff++){
-            mes[9*hh+ff] = cells[gg*params.nx + hh].speeds[ff];
+  for(xx=0;xx<params.ny;xx++){
+    if(rank!=master){
+      if(xx>=start&&xx<=end){
+        for(jj=0;jj<params.nx;jj++) {
+           for(kk=0;kk<NSPEEDS;kk++) {
+             cell_c[jj*NSPEEDS+kk]=cells[ii*params.nx+jj].speeds[kk];
+            }
+         }  
+         MPI_Send(cell_c, NSPEEDS*params.nx, MPI_FLOAT,0, 0, MPI_COMM_WORLD);
+      }
+    }
+
+    if(rank==master){
+      for(source=1;source<nprocs;source++){
+        if(params.rest!=0){
+          if(source>=params.rest){
+            start = params.rest*(params.ny/nprocs+1) + (source-params.rest)*(params.ny/nprocs);
+            end= start+params.ny/nprocs-1;
+          }
+          else{
+            start = source*(params.ny/nprocs+1);
+            end = start+params.ny/nprocs;
           }
         }
+        if(ii>=start&&ii<+end)
+        MPI_Recv(mes2, NSPEEDS*params.nx, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &status);
+          for(hh=0;hh<params.nx;hh++){
+            for(ff=0;ff<NSPEEDS;ff++){
+              cells[gg*params.nx + hh].speeds[ff]=mes2[NSPEEDS*hh+ff];
+            }
+          }
+        }     
       }
-      MPI_Isend(mes, 9*params.nx, MPI_FLOAT, MASTER, tag, MPI_COMM_WORLD, &request);
-  }
-  if(rank == MASTER){
-    for(source=1;source<nprocs;source++){
-            
-          if(params.rest!=0){
-    if(source>=params.rest){
-      start = params.rest*(params.ny/nprocs+1) + (source-params.rest)*(params.ny/nprocs);
-      end= start+params.ny/nprocs-1;
-    }
-    else{
-      start = source*(params.ny/nprocs+1);
-      end = start+params.ny/nprocs;
-    }
-   }
-
-            for(gg=start;gg<=end;gg++) {
-               MPI_Irecv(mes2, 9*params.nx, MPI_FLOAT, source, tag, MPI_COMM_WORLD, &request);
-               for(hh=0;hh<params.nx;hh++){
-                  for(ff=0;ff<9;ff++){
-                    cells[gg*params.nx + hh].speeds[ff]=mes2[9*hh+ff];
-                  }
-                }
-            }     
     }
   }
   
